@@ -18,8 +18,12 @@ from email.utils import parsedate_to_datetime
 UTC = timezone.utc
 TOPICS = {
     "🧠 科技圈": [
-        "国际科技 人工智能 半导体 网络安全",
-        "国际科技 太空 科学 互联网",
+        "人工智能 大模型 AI智能体 生成式AI",
+        "自动驾驶 无人驾驶 机器人 具身智能",
+        "芯片 半导体 量子计算 量子科技",
+        "航天 太空 火箭 卫星 深空探测",
+        "生物科技 基因编辑 新药 新材料 电池",
+        "虚拟现实 增强现实 可穿戴设备 网络安全",
     ],
     "🌍 国际政局": [
         "国际政治 外交 地缘政治",
@@ -70,9 +74,10 @@ def fetch_feed(query: str, hours: int, limit: int) -> list[dict[str, str]]:
     return items
 
 
-def collect(hours: int, limit: int) -> dict[str, list[dict[str, str]]]:
+def collect(hours: int, tech_limit: int, politics_limit: int) -> dict[str, list[dict[str, str]]]:
     digest: dict[str, list[dict[str, str]]] = {}
     for topic, queries in TOPICS.items():
+        limit = tech_limit if topic.startswith("🧠") else politics_limit
         seen: set[str] = set()
         stories: list[dict[str, str]] = []
         for query in queries:
@@ -91,11 +96,11 @@ def collect(hours: int, limit: int) -> dict[str, list[dict[str, str]]]:
     return digest
 
 
-def render(digest: dict[str, list[dict[str, str]]]) -> str:
+def render(digest: dict[str, list[dict[str, str]]], hours: int) -> str:
     local_now = datetime.now(UTC).astimezone(timezone(timedelta(hours=8)))
     parts = [
         f"<h1 style='font-size:22px;margin:0 0 6px'>🗞️ 每日国际新闻简报</h1>",
-        f"<p style='color:#666;margin:0 0 20px'>{local_now:%Y年%m月%d日} · 近30小时</p>",
+        f"<p style='color:#666;margin:0 0 20px'>{local_now:%Y年%m月%d日} · 近{hours}小时</p>",
     ]
     for topic in TOPICS:
         items = digest.get(topic, [])
@@ -141,12 +146,14 @@ def send_email(message: str) -> None:
 
 
 def main() -> None:
-    hours = int(os.getenv("NEWS_LOOKBACK_HOURS", "30"))
-    limit = int(os.getenv("MAX_ITEMS_PER_TOPIC", "8"))
-    message = render(collect(hours, limit))
+    hours = int(os.getenv("NEWS_LOOKBACK_HOURS", "14"))
+    tech_limit = int(os.getenv("MAX_TECH_ITEMS", "12"))
+    politics_limit = int(os.getenv("MAX_POLITICS_ITEMS", "8"))
+    message = render(collect(hours, tech_limit, politics_limit), hours)
     print(re.sub(r"<[^>]+>", "", message))
     send_email(message)
 
 
 if __name__ == "__main__":
     main()
+
