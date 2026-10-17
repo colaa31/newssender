@@ -2,8 +2,9 @@ name: Daily international news digest
 
 on:
   schedule:
-    # 07:00 Asia/Shanghai (23:00 UTC on the previous day)
+    # 07:00 and 19:00 Asia/Shanghai
     - cron: '0 23 * * *'
+    - cron: '0 11 * * *'
   workflow_dispatch:
 
 permissions:
@@ -28,6 +29,7 @@ jobs:
         env:
           QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
           QQ_EMAIL_AUTH_CODE: ${{ secrets.QQ_EMAIL_AUTH_CODE }}
-          NEWS_LOOKBACK_HOURS: '30'
-          MAX_ITEMS_PER_TOPIC: '8'
+          NEWS_LOOKBACK_HOURS: '14'
+          MAX_TECH_ITEMS: '12'
+          MAX_POLITICS_ITEMS: '8'
         run: python news_digest.py
