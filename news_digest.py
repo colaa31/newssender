@@ -10,6 +10,7 @@ import smtplib
 import ssl
 import sys
 import urllib.parse
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -111,7 +112,9 @@ def summarize(digest: dict[str, list[dict[str, str]]]) -> dict[str, list[dict[st
         + json.dumps(packed, ensure_ascii=False)
     )
     payload = {
-        "model": os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+        # GitHub Actions may set this variable to an empty string when the
+        # optional repository variable is absent; treat that as unset.
+        "model": os.getenv("OPENAI_MODEL") or "gpt-4.1-mini",
         "input": prompt,
         "text": {"format": {"type": "json_object"}},
         "max_output_tokens": 2200,
@@ -151,6 +154,9 @@ def summarize(digest: dict[str, list[dict[str, str]]]) -> dict[str, list[dict[st
             if not normalized[output_topic] and digest[input_topic]:
                 raise RuntimeError(f"Chinese summary returned no valid items for {output_topic}")
         return normalized
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"OpenAI API returned HTTP {exc.code}: {details[:1200]}") from exc
     except Exception as exc:
         raise RuntimeError(f"Could not create Chinese news digest: {exc}") from exc
 
