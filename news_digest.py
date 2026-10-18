@@ -49,11 +49,36 @@ TOPICS = {
         ],
         "hl": "zh-CN", "gl": "CN", "ceid": "CN:zh-Hans",
     },
+    "📄 国际 AI 研究论文": {
+        "queries": [],
+        "hl": "en-US", "gl": "US", "ceid": "US:en",
+    },
     "🌍 国际政局": {
         "queries": ["国际政治 外交 地缘政治", "国际选举 国际冲突 各国政府"],
         "hl": "zh-CN", "gl": "CN", "ceid": "CN:zh-Hans",
     },
 }
+
+# First-party announcements and primary research are collected alongside the
+# existing Google News searches. Company feeds are intentionally kept small;
+# the broader media searches remain useful for independent context.
+PRIMARY_FEEDS = [
+    {"name": "OpenAI 官方发布", "url": "https://openai.com/news/rss.xml", "kind": "official", "topic": "🇺🇸 美国 AI 进展"},
+]
+
+OFFICIAL_DOMAIN_QUERIES = [
+    ("Google DeepMind", "deepmind.google", "🇺🇸 美国 AI 进展"),
+    ("Anthropic", "anthropic.com/news", "🇺🇸 美国 AI 进展"),
+    ("Meta AI", "ai.meta.com/blog", "🇺🇸 美国 AI 进展"),
+    ("Microsoft Research", "microsoft.com/en-us/research/blog", "🇺🇸 美国 AI 进展"),
+    ("NVIDIA Research", "research.nvidia.com/news", "🇺🇸 美国 AI 进展"),
+    ("DeepSeek", "deepseek.com", "🇨🇳 中国 AI 进展与应用"),
+    ("Alibaba Qwen", "qwenlm.github.io", "🇨🇳 中国 AI 进展与应用"),
+    ("ByteDance Seed", "seed.bytedance.com", "🇨🇳 中国 AI 进展与应用"),
+    ("Baidu", "research.baidu.com", "🇨🇳 中国 AI 进展与应用"),
+    ("Tencent Hunyuan", "hunyuan.tencent.com", "🇨🇳 中国 AI 进展与应用"),
+    ("Huawei", "hiascend.com", "🇨🇳 中国 AI 进展与应用"),
+]
 
 
 class ArticleTextParser(HTMLParser):
@@ -242,6 +267,75 @@ def fetch_feed(query: str, hours: int, limit: int, locale: dict[str, str]) -> li
     return items
 
 
+def fetch_primary_feed(feed: dict[str, str], hours: int, limit: int) -> list[dict[str, str]]:
+    """Read a first-party RSS/Atom feed, preserving its canonical article URL."""
+    req = urllib.request.Request(feed["url"], headers={"User-Agent": "DailyWorldNews/1.0"})
+    with urllib.request.urlopen(req, timeout=25) as response:
+        root = ET.fromstring(response.read())
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
+    items = []
+    for node in root.findall(".//item") + root.findall(".//{http://www.w3.org/2005/Atom}entry"):
+        atom_ns = "{http://www.w3.org/2005/Atom}"
+        title = (node.findtext("title") or node.findtext(f"{atom_ns}title") or "").strip()
+        link = (node.findtext("link") or "").strip()
+        if not link:
+            atom_link = node.find("{http://www.w3.org/2005/Atom}link")
+            link = atom_link.get("href", "") if atom_link is not None else ""
+        pub = (node.findtext("pubDate") or node.findtext("{http://www.w3.org/2005/Atom}published")
+               or node.findtext("{http://www.w3.org/2005/Atom}updated") or "").strip()
+        try:
+            published = parsedate_to_datetime(pub).astimezone(UTC)
+        except (TypeError, ValueError, OverflowError):
+            try:
+                published = datetime.fromisoformat(pub.replace("Z", "+00:00")).astimezone(UTC)
+            except (TypeError, ValueError, OverflowError):
+                continue
+        if published < cutoff or not title or not link:
+            continue
+        description = (node.findtext("description") or node.findtext(f"{atom_ns}content") or
+                       node.findtext("{http://www.w3.org/2005/Atom}summary") or "")
+        snippet = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(description))).strip()
+        items.append({
+            "title": title, "url": link, "source": feed["name"],
+            "source_type": feed["kind"], "published": published.isoformat(timespec="minutes"),
+            "snippet": snippet[:2000],
+        })
+    return sorted(items, key=lambda item: item["published"], reverse=True)[:limit]
+
+
+def fetch_arxiv(hours: int, limit: int) -> list[dict[str, str]]:
+    """Collect recent primary papers from arXiv's public Atom API (no API key)."""
+    query = '(cat:cs.AI OR cat:cs.CL OR cat:cs.LG OR cat:cs.CV) AND (all:"large language model" OR all:"AI agent" OR all:multimodal OR all:reasoning)'
+    params = urllib.parse.urlencode({
+        "search_query": query, "sortBy": "submittedDate", "sortOrder": "descending", "max_results": str(limit * 3),
+    })
+    req = urllib.request.Request("https://export.arxiv.org/api/query?" + params,
+                                 headers={"User-Agent": "DailyWorldNews/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as response:
+        root = ET.fromstring(response.read())
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
+    ns = "{http://www.w3.org/2005/Atom}"
+    items = []
+    for entry in root.findall(f"{ns}entry"):
+        title = re.sub(r"\s+", " ", entry.findtext(f"{ns}title", default="")).strip()
+        url = entry.findtext(f"{ns}id", default="").strip()
+        pub = entry.findtext(f"{ns}published", default="").strip()
+        try:
+            published = datetime.fromisoformat(pub.replace("Z", "+00:00")).astimezone(UTC)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if published < cutoff or not title or not url:
+            continue
+        summary = re.sub(r"\s+", " ", entry.findtext(f"{ns}summary", default="")).strip()
+        items.append({
+            "title": title, "url": url, "source": "arXiv 预印本", "source_type": "research",
+            "published": published.isoformat(timespec="minutes"), "snippet": summary[:2000],
+        })
+        if len(items) >= limit:
+            break
+    return items
+
+
 def collect(hours: int, tech_limit: int, politics_limit: int) -> dict[str, list[dict[str, str]]]:
     digest: dict[str, list[dict[str, str]]] = {}
     for topic, config in TOPICS.items():
@@ -263,6 +357,60 @@ def collect(hours: int, tech_limit: int, politics_limit: int) -> dict[str, list[
                     stories.append(item)
         stories.sort(key=lambda item: item["published"], reverse=True)
         digest[topic] = stories[:limit]
+    # Add original company announcements and domain-restricted official
+    # coverage. Failures remain isolated so one outage cannot suppress the digest.
+    us_topic = "🇺🇸 美国 AI 进展"
+    primary = digest.setdefault(us_topic, [])
+    for feed in PRIMARY_FEEDS:
+        try:
+            primary.extend(fetch_primary_feed(feed, hours, tech_limit))
+        except Exception as exc:
+            print(f"Primary feed error [{feed['name']}]: {exc}", file=sys.stderr)
+    for name, domain, topic in OFFICIAL_DOMAIN_QUERIES:
+        try:
+            locale = {key: TOPICS[topic][key] for key in ("hl", "gl", "ceid")}
+            query = (f"site:{domain} AI model research product" if topic == us_topic
+                     else f"site:{domain} 大模型 AI 研究 产品 发布")
+            batch = fetch_feed(query, hours, tech_limit, locale)
+            for item in batch:
+                item["source_type"] = "official"
+                item["source"] = f"{name}（官方站点）"
+            digest.setdefault(topic, []).extend(batch)
+        except Exception as exc:
+            print(f"Official domain search error [{name}]: {exc}", file=sys.stderr)
+    try:
+        digest["📄 国际 AI 研究论文"] = fetch_arxiv(hours, tech_limit)
+    except Exception as exc:
+        print(f"arXiv feed error: {exc}", file=sys.stderr)
+    for topic, items in digest.items():
+        seen: set[str] = set()
+        unique = []
+        for item in sorted(items, key=lambda story: story["published"], reverse=True):
+            key = re.sub(r"\W+", "", item["title"].lower())
+            if key and key not in seen:
+                seen.add(key)
+                unique.append(item)
+        limit = tech_limit if topic.startswith(("🇺🇸", "🇨🇳", "📄")) else politics_limit
+        if topic.startswith(("🇺🇸", "🇨🇳")):
+            # Keep primary research and company announcements from crowding
+            # out independent reporting in a short daily email.
+            budgets = {"research": 2, "official": 2, "media": limit}
+            chosen = []
+            counts = {kind: 0 for kind in budgets}
+            for item in unique:
+                kind = item.get("source_type", "media")
+                if counts.get(kind, 0) < budgets.get(kind, limit):
+                    chosen.append(item)
+                    counts[kind] = counts.get(kind, 0) + 1
+                if len(chosen) == limit:
+                    break
+            if len(chosen) < limit:
+                chosen_ids = {id(item) for item in chosen}
+                chosen.extend(item for item in unique if id(item) not in chosen_ids)
+                chosen = chosen[:limit]
+            digest[topic] = chosen
+        else:
+            digest[topic] = unique[:limit]
     return digest
 
 
@@ -288,6 +436,12 @@ def render(digest: dict[str, list[dict[str, str]]], hours: int, executive_summar
             title = html.escape(item["title"])
             source = html.escape(item["source"])
             published = html.escape(item["published"])
+            source_type = {"official": "官方发布", "research": "研究论文", "media": "媒体报道"}.get(
+                item.get("source_type", "media"), "媒体报道"
+            )
+            parsed_link = urllib.parse.urlparse(item["url"])
+            source_link = (html.escape(item["url"], quote=True)
+                           if parsed_link.scheme == "https" and parsed_link.hostname else "")
             report = html.escape(item.get("report", ""))
             body = report.replace("\n", "<br>") if report else (
                 "<b>研究简报暂未生成。</b><br>原始 RSS 摘要：" + html.escape(item["snippet"])
@@ -296,7 +450,8 @@ def render(digest: dict[str, list[dict[str, str]]], hours: int, executive_summar
                 "<div style='margin:0 0 16px;padding:0 0 14px;border-bottom:1px solid #e8e8e8'>"
                 f"<p style='margin:0 0 6px;line-height:1.6'><b>{index}. {title}</b></p>"
                 + f"<p style='margin:4px 0;line-height:1.7;color:#333'>{body}</p>"
-                + f"<p style='margin:6px 0 0;color:#777;font-size:12px'>来源：{source} · {published}</p></div>"
+                + f"<p style='margin:6px 0 0;color:#777;font-size:12px'>来源类型：{source_type} · 来源：{source} · {published}"
+                + (f" · <a href='{source_link}'>查看来源</a>" if source_link else "") + "</p></div>"
             )
     parts.append("<p style='color:#888;font-size:12px'>简报基于可访问的报道正文与媒体 RSS 摘要，由 Gemini 免费层整理；背景或因果证据不足时会明确标出。未获取到研究简报时显示原始摘要。</p>")
     return "\n".join(parts)
