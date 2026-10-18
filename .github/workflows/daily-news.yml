@@ -29,7 +29,8 @@ jobs:
         env:
           QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
           QQ_EMAIL_AUTH_CODE: ${{ secrets.QQ_EMAIL_AUTH_CODE }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           NEWS_LOOKBACK_HOURS: '14'
-          MAX_TECH_ITEMS: '12'
+          MAX_TECH_ITEMS: '6'
           MAX_POLITICS_ITEMS: '8'
         run: python news_digest.py
