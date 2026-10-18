@@ -17,26 +17,30 @@ from email.utils import parsedate_to_datetime
 
 UTC = timezone.utc
 TOPICS = {
-    "🧠 科技圈": [
-        "人工智能 大模型 AI智能体 生成式AI",
-        "自动驾驶 无人驾驶 机器人 具身智能",
-        "芯片 半导体 量子计算 量子科技",
-        "航天 太空 火箭 卫星 深空探测",
-        "生物科技 基因编辑 新药 新材料 电池",
-        "虚拟现实 增强现实 可穿戴设备 网络安全",
-    ],
-    "🌍 国际政局": [
-        "国际政治 外交 地缘政治",
-        "国际选举 国际冲突 各国政府",
-    ],
+    "🧠 科技圈": {
+        "queries": [
+            "artificial intelligence generative AI large language models",
+            "autonomous vehicles robotics humanoid robots",
+            "semiconductors chips quantum computing",
+            "space launch rockets satellites",
+            "biotechnology gene editing drug discovery battery materials",
+            "virtual reality augmented reality wearable cybersecurity",
+        ],
+        # Use the US English edition to prioritize international outlets.
+        "hl": "en-US", "gl": "US", "ceid": "US:en",
+    },
+    "🌍 国际政局": {
+        "queries": ["国际政治 外交 地缘政治", "国际选举 国际冲突 各国政府"],
+        "hl": "zh-CN", "gl": "CN", "ceid": "CN:zh-Hans",
+    },
 }
 
 
-def fetch_feed(query: str, hours: int, limit: int) -> list[dict[str, str]]:
+def fetch_feed(query: str, hours: int, limit: int, locale: dict[str, str]) -> list[dict[str, str]]:
     days = max(1, (hours + 23) // 24)
     params = urllib.parse.urlencode({
         "q": f"{query} when:{days}d",
-        "hl": "zh-CN", "gl": "CN", "ceid": "CN:zh-Hans",
+        **locale,
     })
     url = "https://news.google.com/rss/search?" + params
     req = urllib.request.Request(url, headers={"User-Agent": "DailyWorldNews/1.0"})
@@ -67,7 +71,7 @@ def fetch_feed(query: str, hours: int, limit: int) -> list[dict[str, str]]:
             "url": link,
             "source": source,
             "published": published.isoformat(timespec="minutes"),
-            "snippet": summary[:600],
+            "snippet": summary[:2000],
         })
         if len(items) >= limit:
             break
@@ -76,13 +80,15 @@ def fetch_feed(query: str, hours: int, limit: int) -> list[dict[str, str]]:
 
 def collect(hours: int, tech_limit: int, politics_limit: int) -> dict[str, list[dict[str, str]]]:
     digest: dict[str, list[dict[str, str]]] = {}
-    for topic, queries in TOPICS.items():
+    for topic, config in TOPICS.items():
+        queries = config["queries"]
+        locale = {key: config[key] for key in ("hl", "gl", "ceid")}
         limit = tech_limit if topic.startswith("🧠") else politics_limit
         seen: set[str] = set()
         stories: list[dict[str, str]] = []
         for query in queries:
             try:
-                batch = fetch_feed(query, hours, limit)
+                batch = fetch_feed(query, hours, limit, locale)
             except Exception as exc:
                 print(f"RSS feed error [{topic}]: {exc}", file=sys.stderr)
                 continue
@@ -110,18 +116,15 @@ def render(digest: dict[str, list[dict[str, str]]], hours: int) -> str:
             continue
         for index, item in enumerate(items, 1):
             title = html.escape(item["title"])
-            url = html.escape(item["url"], quote=True)
             source = html.escape(item["source"])
             snippet = html.escape(item["snippet"])
             parts.append(
                 "<div style='margin:0 0 16px;padding:0 0 14px;border-bottom:1px solid #e8e8e8'>"
-                f"<p style='margin:0 0 6px;line-height:1.6'><b>{index}. {topic.split(' ', 1)[1]}里，"
-                f"<a href=\"{url}\" style='color:#155eef;text-decoration:none'>{title}</a></b></p>"
+                f"<p style='margin:0 0 6px;line-height:1.6'><b>{index}. {title}</b></p>"
                 + (f"<p style='margin:4px 0;line-height:1.6;color:#333'>{snippet}</p>" if snippet else "")
-                + f"<p style='margin:6px 0 0;color:#777;font-size:12px'>来源：{source} · "
-                f"<a href=\"{url}\">阅读原文</a></p></div>"
+                + f"<p style='margin:6px 0 0;color:#777;font-size:12px'>来源：{source}</p></div>"
             )
-    parts.append("<p style='color:#888;font-size:12px'>新闻由 Google News RSS 聚合，内容依据媒体标题与摘要整理；请点击原文核实细节。</p>")
+    parts.append("<p style='color:#888;font-size:12px'>科技新闻来自 Google News 美国英语版及国际媒体 RSS 摘要；其他新闻由 Google News 中文版聚合。摘要长度取决于媒体提供的 RSS 内容。</p>")
     return "\n".join(parts)
 
 
@@ -135,8 +138,7 @@ def send_email(message: str) -> None:
     email["Subject"] = f"国际新闻简报｜{local_now:%Y-%m-%d}"
     email["From"] = address
     email["To"] = address
-    plain = re.sub(r"<a href=\"([^\"]+)\"[^>]*>(.*?)</a>", r"\2 (\1)", message)
-    plain = re.sub(r"<br\s*/?>|</p>|</h1>|</h2>|</div>", "\n", plain, flags=re.I)
+    plain = re.sub(r"<br\s*/?>|</p>|</h1>|</h2>|</div>", "\n", message, flags=re.I)
     plain = html.unescape(re.sub(r"<[^>]+>", "", plain))
     email.set_content(plain)
     email.add_alternative(message, subtype="html")
