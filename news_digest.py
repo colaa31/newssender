@@ -17,17 +17,32 @@ from email.utils import parsedate_to_datetime
 
 UTC = timezone.utc
 TOPICS = {
-    "🧠 科技圈": {
+    "🇺🇸 美国 AI 进展": {
         "queries": [
-            "artificial intelligence generative AI large language models",
-            "autonomous vehicles robotics humanoid robots",
-            "semiconductors chips quantum computing",
-            "space launch rockets satellites",
-            "biotechnology gene editing drug discovery battery materials",
-            "virtual reality augmented reality wearable cybersecurity",
+            'OpenAI GPT model research technical report benchmark API product launch agent',
+            'Anthropic Claude model research benchmark release coding agent enterprise deployment',
+            'Google DeepMind research paper benchmark Gemini model product launch',
+            'Meta AI model research release Muse product AI glasses agent',
+            'Microsoft Copilot AI agent enterprise rollout customer case study',
+            'NVIDIA AI research model platform product release enterprise deployment',
+            'AI agent deployment healthcare finance software coding measurable results case study',
+            'generative AI production deployment customer service education science industry case study',
         ],
-        # Use the US English edition to prioritize international outlets.
+        # Use the US English edition and searches centered on US labs and products.
         "hl": "en-US", "gl": "US", "ceid": "US:en",
+    },
+    "🇨🇳 中国 AI 进展与应用": {
+        "queries": [
+            'DeepSeek 新模型 技术报告 评测 开源 发布 应用',
+            '阿里 通义千问 Qwen 模型 技术报告 评测 开源 企业部署',
+            '字节 豆包 Seed AI 模型 发布 产品 企业应用 案例',
+            '百度 文心大模型 产品 发布 行业部署 案例',
+            '腾讯 混元大模型 产品 发布 企业应用 案例',
+            '华为 盘古大模型 行业部署 应用效果 案例',
+            '中国 大模型 企业部署 行业应用 实际案例 效果',
+            '中国 AI 智能体 产品 发布 企业落地 实际应用',
+        ],
+        "hl": "zh-CN", "gl": "CN", "ceid": "CN:zh-Hans",
     },
     "🌍 国际政局": {
         "queries": ["国际政治 外交 地缘政治", "国际选举 国际冲突 各国政府"],
@@ -83,7 +98,7 @@ def collect(hours: int, tech_limit: int, politics_limit: int) -> dict[str, list[
     for topic, config in TOPICS.items():
         queries = config["queries"]
         locale = {key: config[key] for key in ("hl", "gl", "ceid")}
-        limit = tech_limit if topic.startswith("🧠") else politics_limit
+        limit = tech_limit if topic.startswith(("🇺🇸", "🇨🇳")) else politics_limit
         seen: set[str] = set()
         stories: list[dict[str, str]] = []
         for query in queries:
@@ -124,7 +139,7 @@ def render(digest: dict[str, list[dict[str, str]]], hours: int) -> str:
                 + (f"<p style='margin:4px 0;line-height:1.6;color:#333'>{snippet}</p>" if snippet else "")
                 + f"<p style='margin:6px 0 0;color:#777;font-size:12px'>来源：{source}</p></div>"
             )
-    parts.append("<p style='color:#888;font-size:12px'>科技新闻来自 Google News 美国英语版及国际媒体 RSS 摘要；其他新闻由 Google News 中文版聚合。摘要长度取决于媒体提供的 RSS 内容。</p>")
+    parts.append("<p style='color:#888;font-size:12px'>美国 AI 新闻聚焦头部实验室、模型研究、产品发布与实际部署；中国 AI 新闻聚焦模型进展及行业应用。内容来自 Google News RSS 和媒体摘要，摘要详略取决于来源提供的内容。</p>")
     return "\n".join(parts)
 
 
